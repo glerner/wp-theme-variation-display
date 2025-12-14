@@ -34,7 +34,9 @@ add_action( 'admin_menu', function () {
             $version = '0.1.0';
             $file_time = file_exists( WPWM_TVD_DIR . 'assets/app.js' ) ? date( 'Y-m-d H:i:s', filemtime( WPWM_TVD_DIR . 'assets/app.js' ) ) : 'unknown';
             echo '<div class="wrap">';
-            echo '<h1>Theme Variation Display <small style="font-size:14px;color:#666;font-weight:normal;">(v' . esc_html( $version ) . ' | JS: ' . esc_html( $file_time ) . ')</small></h1>';
+            echo '<h1>Theme Variation Display </h1>';
+			echo "<p>Select the Theme Variation you like.</p>";
+			// Required mount point for assets/app.js. The script looks for #wpwm-tvd-root and injects the variations UI here; deleting this div prevents rendering.
             echo '<div id="wpwm-tvd-root"></div>';
             echo '</div>';
         }
@@ -151,6 +153,82 @@ add_action( 'rest_api_init', function () {
 			}
 
 			return rest_ensure_response( [ 'variations' => $variations ] );
+		}
+	] );
+
+	// GET current variation
+	register_rest_route( 'wpwm-tvd/v1', '/current', [
+		'methods'  => 'GET',
+		'permission_callback' => '__return_true',
+		'callback' => function () {
+			$theme = wp_get_theme();
+			$stylesheet = $theme->get_stylesheet();
+
+			// Find the global styles post for this theme
+			$global_styles_query = new WP_Query( [
+				'post_type'      => 'wp_global_styles',
+				'posts_per_page' => 1,
+				'no_found_rows'  => true,
+				'tax_query'      => [
+					[
+						'taxonomy' => 'wp_theme',
+						'field'    => 'name',
+						'terms'    => $stylesheet,
+					],
+				],
+			] );
+
+			if ( ! $global_styles_query->have_posts() ) {
+				return rest_ensure_response( [
+					'current' => null,
+					'message' => 'No global styles post found'
+				] );
+			}
+
+			$global_styles_post = $global_styles_query->posts[0];
+			$current_config = json_decode( $global_styles_post->post_content, true ) ?: [];
+
+			// WordPress stores the variation title in the config's 'title' field
+			$matched_variation = null;
+			$current_title = isset( $current_config['title'] ) ? $current_config['title'] : '';
+
+			error_log( 'WPWM-TVD: Current config title: ' . $current_title );
+			error_log( 'WPWM-TVD: Post title: ' . $global_styles_post->post_title );
+
+			// Get all variations to compare
+			$styles_dir = get_stylesheet_directory() . '/styles';
+			$variations = [];
+			if ( is_dir( $styles_dir ) ) {
+				$files = glob( $styles_dir . '/*.json' );
+				foreach ( $files as $file ) {
+					$json = file_get_contents( $file );
+					$data = json_decode( $json, true );
+					if ( $data && isset( $data['title'] ) ) {
+						$variations[] = [
+							'title' => $data['title'],
+							'slug'  => basename( $file, '.json' ),
+							'config' => $data
+						];
+					}
+				}
+			}
+
+			// Match by title - WordPress stores the variation title in the config
+			if ( $current_title ) {
+				foreach ( $variations as $variation ) {
+					if ( $variation['title'] === $current_title ) {
+						$matched_variation = $variation['slug'];
+						error_log( 'WPWM-TVD: Matched by title: ' . $matched_variation );
+						break;
+					}
+				}
+			}
+
+			return rest_ensure_response( [
+				'current' => $matched_variation,
+				'post_id' => $global_styles_post->ID,
+				'post_title' => $global_styles_post->post_title
+			] );
 		}
 	] );
 
@@ -294,9 +372,33 @@ add_action( 'rest_api_init', function () {
 			// Get existing content and merge with variation config
 			$existing_config = json_decode( $global_styles_post->post_content, true ) ?: [];
 
+			// Debug logging
+			error_log( '=== WPWM-TVD: Applying Variation ===' );
+			error_log( 'Post ID: ' . $global_styles_post->ID );
+			error_log( 'Theme: ' . $stylesheet );
+
+			// Log incoming palette
+			if ( isset( $variation_config['settings']['color']['palette'] ) ) {
+				$incoming_palette = $variation_config['settings']['color']['palette'];
+				error_log( 'Incoming palette type: ' . ( wp_is_numeric_array( $incoming_palette ) ? 'flat array' : 'origin-wrapped' ) );
+				if ( wp_is_numeric_array( $incoming_palette ) ) {
+					$primary_light = null;
+					foreach ( $incoming_palette as $color ) {
+						if ( isset( $color['slug'] ) && strpos( $color['slug'], 'primary-light' ) !== false ) {
+							$primary_light = $color;
+							break;
+						}
+					}
+					if ( $primary_light ) {
+						error_log( 'Incoming primary-light: ' . wp_json_encode( $primary_light ) );
+					}
+				}
+			}
+
 			// CRITICAL: Wrap flat array palettes in 'theme' origin before merging
 			// This prevents array_replace_recursive from creating numeric keys
 			if ( isset( $variation_config['settings']['color']['palette'] ) && wp_is_numeric_array( $variation_config['settings']['color']['palette'] ) ) {
+				error_log( 'Wrapping flat palette array in theme origin' );
 				$variation_config['settings']['color']['palette'] = [
 					'theme' => $variation_config['settings']['color']['palette']
 				];
@@ -318,11 +420,29 @@ add_action( 'rest_api_init', function () {
 
 			$merged_config = array_replace_recursive( $existing_config, $variation_config );
 
+			// Log merged palette
+			if ( isset( $merged_config['settings']['color']['palette']['theme'] ) ) {
+				$merged_palette = $merged_config['settings']['color']['palette']['theme'];
+				$primary_light = null;
+				foreach ( $merged_palette as $color ) {
+					if ( isset( $color['slug'] ) && strpos( $color['slug'], 'primary-light' ) !== false ) {
+						$primary_light = $color;
+						break;
+					}
+				}
+				if ( $primary_light ) {
+					error_log( 'Merged primary-light: ' . wp_json_encode( $primary_light ) );
+				}
+			}
+
 			// Update the post
 			$result = wp_update_post( [
 				'ID'           => $global_styles_post->ID,
 				'post_content' => wp_json_encode( $merged_config ),
 			], true );
+
+			error_log( 'Update result: ' . ( is_wp_error( $result ) ? 'ERROR' : 'SUCCESS' ) );
+			error_log( '=== End WPWM-TVD ===' );
 
 			if ( is_wp_error( $result ) ) {
 				return $result;

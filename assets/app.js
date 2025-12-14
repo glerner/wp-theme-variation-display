@@ -14,6 +14,10 @@
   const DEFAULT_LIGHT_TEXT = '#000';
   const DEFAULT_DARK_TEXT = '#fff';
 
+  // Global state
+  let allVariations = [];
+  let currentVariationSlug = null;
+
   function el(tag, cls, text) {
     const n = document.createElement(tag);
     if (cls) n.className = cls;
@@ -74,12 +78,28 @@
   function whenStylesScreenReady(cb) {
     console.log('WPWM-TVD: Waiting for Site Editor styles screen...');
     const { subscribe } = wp.data;
+    let attempts = 0;
+    const maxAttempts = 100; // Try for ~10 seconds
+
     const unsub = subscribe(() => {
-      const host = document.querySelector('.edit-site-style-variations, .edit-site-style-variations__list');
+      attempts++;
+
+      // Try multiple possible selectors for different WordPress versions
+      const host = document.querySelector(
+        '.edit-site-style-variations, ' +
+        '.edit-site-style-variations__list, ' +
+        '.edit-site-sidebar__panel-tabs, ' +
+        '.edit-site-global-styles-sidebar, ' +
+        '.interface-complementary-area'
+      );
+
       if (host) {
-        console.log('WPWM-TVD: Site Editor styles screen found!');
+        console.log('WPWM-TVD: Site Editor styles screen found!', host.className);
         unsub();
         cb(host);
+      } else if (attempts >= maxAttempts) {
+        console.log('WPWM-TVD: Site Editor styles screen not found after', attempts, 'attempts');
+        unsub();
       }
     });
   }
@@ -97,6 +117,49 @@
       const res = await window.wp.apiFetch({ path });
       return res.variations || [];
     } catch (e) { console.error('WPWM-TVD fetch error', e); return []; }
+  }
+
+  async function getCurrentVariation() {
+    try {
+      // Try Site Editor API first (only available in Site Editor context)
+      if (window.wp && window.wp.data && window.wp.data.select) {
+        const coreSel = window.wp.data.select('core');
+        if (coreSel && coreSel.getEditedEntityRecord) {
+          const currentGlobalStylesId = coreSel.__experimentalGetCurrentGlobalStylesId
+            ? coreSel.__experimentalGetCurrentGlobalStylesId()
+            : null;
+          if (currentGlobalStylesId) {
+            const globalStyles = coreSel.getEditedEntityRecord('root', 'globalStyles', currentGlobalStylesId);
+            if (globalStyles && globalStyles.title) {
+              // Try to match title to a variation slug
+              const matchedVar = allVariations.find(v =>
+                normalizeSlug(v.title) === normalizeSlug(globalStyles.title) ||
+                normalizeSlug(v.slug) === normalizeSlug(globalStyles.title)
+              );
+              return matchedVar ? normalizeSlug(matchedVar.slug || matchedVar.title) : null;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.log('WPWM-TVD: Site Editor API not available for current variation detection');
+    }
+
+    // Fallback: Use REST API (works in admin context)
+    try {
+      let relBase = 'wpwm-tvd/v1';
+      try {
+        const u = new URL(apiBase, window.location.origin);
+        relBase = u.pathname.replace(/^\/?/, '').replace(/^.*?wp-json\//, '');
+      } catch (_e) { /* fallback */ }
+      const path = relBase.replace(/\/?$/, '') + '/current';
+      const response = await window.wp.apiFetch({ path });
+      console.log('WPWM-TVD: Current variation from REST API:', response);
+      return response.current;
+    } catch (e) {
+      console.log('WPWM-TVD: Could not detect current variation via REST API', e);
+    }
+    return null;
   }
 
   function createPanelStructure() {
@@ -179,6 +242,11 @@
   function renderFontSamples(variation) {
     const fontsBox = el('div', 'wpwm-tvd-fonts');
     const ff = (((variation.config || {}).settings || {}).typography || {}).fontFamilies || [];
+    const stylesFF = (((variation.config || {}).styles || {}).typography || {}).fontFamily;
+    const hasAnyFonts = (ff && ff.length) || !!stylesFF;
+    if (hasAnyFonts) {
+      fontsBox.appendChild(el('div', 'wpwm-tvd-fonts-label', 'Fonts:'));
+    }
     if (ff.length) {
       const row = el('div', 'font-row');
       ff.slice(0, MAX_FONT_SAMPLES).forEach(fontItem => {
@@ -189,7 +257,6 @@
       });
       fontsBox.appendChild(row);
     }
-    const stylesFF = (((variation.config || {}).styles || {}).typography || {}).fontFamily;
     if (stylesFF) {
       const row = el('div', 'font-row');
       const bodySample = el('div', 'sample', 'Body sample AaBbCc');
@@ -200,12 +267,12 @@
     return fontsBox;
   }
 
-  function createActionButtons(variation) {
+  function createActionButtons(variation, variationIndex) {
     const actions = el('div', 'wpwm-tvd-actions');
     const btnSelect = el('button', '', 'Select');
     btnSelect.addEventListener('click', () => applyVariation(variation));
-    const btnPreview = el('button', 'secondary', 'Preview (temporary)');
-    btnPreview.addEventListener('click', () => previewInEditor(variation));
+    const btnPreview = el('button', 'secondary', 'Preview');
+    btnPreview.addEventListener('click', () => showPreviewModal(variationIndex));
     actions.appendChild(btnSelect);
     actions.appendChild(btnPreview);
     return actions;
@@ -249,10 +316,11 @@
     });
   }
 
-  function renderCard(grid, v) {
+  function renderCard(grid, v, variationIndex) {
     const slug = normalizeSlug(v.slug || v.title || 'variation');
     const scopeClass = 'wpwm-tvd-var--' + slug;
     const card = el('div', 'wpwm-tvd-card ' + scopeClass);
+    card.dataset.variationSlug = slug;
 
     // Inject scoped CSS variables if provided by variation JSON
     const cssFromJson = (v.config && v.config.styles && v.config.styles.css) ? v.config.styles.css : '';
@@ -272,14 +340,18 @@
 
     // Body with title, meta, fonts, and actions
     const body = el('div', 'wpwm-tvd-body');
-    const title = el('div', 'wpwm-tvd-title', v.title || v.slug);
-    const metaText = (v.source ? String(v.source) : 'theme') + (v.slug ? ' · ' + v.slug : '');
-    const meta = el('div', 'wpwm-tvd-meta', metaText);
-    const fontsBox = renderFontSamples(v);
-    const actions = createActionButtons(v);
+    const titleText = v.title || v.slug;
+    const title = el('div', 'wpwm-tvd-title', titleText);
 
+    // Add current indicator if this is the active variation
+    if (currentVariationSlug && slug === currentVariationSlug) {
+      const currentBadge = el('span', 'wpwm-tvd-current-badge', ' (Current)');
+      title.appendChild(currentBadge);
+    }
+
+    const fontsBox = renderFontSamples(v);
+    const actions = createActionButtons(v, variationIndex);
     body.appendChild(title);
-    body.appendChild(meta);
     if (fontsBox.children.length) body.appendChild(fontsBox);
     body.appendChild(actions);
 
@@ -289,6 +361,206 @@
 
     // After insertion, compute contrast (WCAG) and set label colors
     applyContrastAwareLabels(card);
+  }
+
+  function showPreviewModal(startIndex) {
+    let currentIndex = startIndex;
+    let isDarkMode = false;
+
+    // Create modal overlay
+    const overlay = el('div', 'wpwm-tvd-modal-overlay');
+    const modal = el('div', 'wpwm-tvd-modal');
+
+    // Modal header with title and controls
+    const header = el('div', 'wpwm-tvd-modal-header');
+    const titleEl = el('h2', 'wpwm-tvd-modal-title');
+    const controls = el('div', 'wpwm-tvd-modal-controls');
+
+    // Light/Dark toggle
+    const themeToggle = el('button', 'wpwm-tvd-theme-toggle', '☀️ Light');
+    themeToggle.addEventListener('click', () => {
+      isDarkMode = !isDarkMode;
+      themeToggle.textContent = isDarkMode ? '🌙 Dark' : '☀️ Light';
+      updatePreview();
+    });
+
+    // Close button
+    const closeBtn = el('button', 'wpwm-tvd-modal-close', '✕');
+    closeBtn.addEventListener('click', () => {
+      document.body.removeChild(overlay);
+    });
+
+    controls.appendChild(themeToggle);
+    controls.appendChild(closeBtn);
+    header.appendChild(titleEl);
+    header.appendChild(controls);
+
+    // Preview content area
+    const previewContent = el('div', 'wpwm-tvd-preview-content');
+
+    // Navigation controls
+    const nav = el('div', 'wpwm-tvd-modal-nav');
+    const prevBtn = el('button', 'wpwm-tvd-nav-btn', '← Previous');
+    const nextBtn = el('button', 'wpwm-tvd-nav-btn', 'Next →');
+    const counter = el('span', 'wpwm-tvd-counter');
+
+    prevBtn.addEventListener('click', () => {
+      currentIndex = (currentIndex - 1 + allVariations.length) % allVariations.length;
+      updatePreview();
+    });
+
+    nextBtn.addEventListener('click', () => {
+      currentIndex = (currentIndex + 1) % allVariations.length;
+      updatePreview();
+    });
+
+    nav.appendChild(prevBtn);
+    nav.appendChild(counter);
+    nav.appendChild(nextBtn);
+
+    // Assemble modal
+    modal.appendChild(header);
+    modal.appendChild(previewContent);
+    modal.appendChild(nav);
+    overlay.appendChild(modal);
+
+    // Update preview content
+    function updatePreview() {
+      const v = allVariations[currentIndex];
+      const palette = (((v.config || {}).settings || {}).color || {}).palette || [];
+      const cssString = (((v.config || {}).styles || {}).css) || '';
+
+      titleEl.textContent = v.title || v.slug;
+      counter.textContent = `${currentIndex + 1} / ${allVariations.length}`;
+
+      // Parse CSS variables from the styles.css string
+      const cssVars = {};
+      if (cssString) {
+        // Match CSS variable definitions like: --primary-light: #7ad1ff;
+        const varMatches = cssString.matchAll(/--([a-z0-9-]+)\s*:\s*([^;]+);/gi);
+        for (const match of varMatches) {
+          const varName = match[1];
+          let varValue = match[2].trim();
+          // Resolve nested var() references
+          if (varValue.startsWith('var(')) {
+            const nestedVar = varValue.match(/var\(--([a-z0-9-]+)\)/i);
+            if (nestedVar && cssVars[nestedVar[1]]) {
+              varValue = cssVars[nestedVar[1]];
+            }
+          }
+          cssVars[varName] = varValue;
+        }
+      }
+
+      // Get color values from palette - resolve var() references to actual colors
+      const getColor = (...slugPatterns) => {
+        for (const pattern of slugPatterns) {
+          const paletteEntry = palette.find(c => c.slug && c.slug.includes(pattern));
+          if (paletteEntry) {
+            let color = paletteEntry.color;
+            // If color is a CSS variable, resolve it
+            if (color && color.startsWith('var(')) {
+              const varMatch = color.match(/var\(--([a-z0-9-]+)\)/i);
+              if (varMatch && cssVars[varMatch[1]]) {
+                color = cssVars[varMatch[1]];
+              }
+            }
+            // Return if we have a real color value (not another var)
+            if (color && !color.startsWith('var(')) {
+              return color;
+            }
+          }
+        }
+        return null;
+      };
+
+      // Try common WordPress theme slugs and palette generator slugs
+      const bgColor = isDarkMode
+        ? (getColor('base-dark', 'background-dark', 'base') || '#1a1a1a')
+        : (getColor('base-light', 'background-light', 'base', 'background') || '#ffffff');
+
+      const textColor = isDarkMode
+        ? (getColor('text-on-dark', 'contrast-dark', 'foreground-dark', 'contrast') || '#e0e0e0')
+        : (getColor('text-on-light', 'contrast-light', 'foreground-light', 'contrast', 'foreground') || '#1a1a1a');
+
+      // Headings: primary-dark in light mode, primary-light in dark mode
+      const headingColor = isDarkMode
+        ? (getColor('primary-light', 'primary') || '#7ad1ff')
+        : (getColor('primary-dark', 'primary-darker', 'primary') || '#004f78');
+
+      // Featured section: primary-lighter background with text-on-light text in light mode
+      const featuredBg = isDarkMode
+        ? (getColor('primary-darker', 'primary-dark') || '#003c5c')
+        : (getColor('primary-lighter', 'primary-light') || '#b1e4ff');
+      const featuredText = isDarkMode
+        ? (getColor('text-on-dark') || '#e0e0e0')
+        : (getColor('text-on-light') || '#1a1a1a');
+
+      // For list items, use darker colors in light mode for readability
+      const listColor1 = isDarkMode
+        ? (getColor('secondary-light', 'secondary') || '#fcbc41')
+        : (getColor('secondary-dark', 'secondary-darker', 'secondary') || '#664402');
+      const listColor2 = isDarkMode
+        ? (getColor('secondary-lighter') || '#fdd891')
+        : (getColor('secondary-darker', 'secondary-dark') || '#4e3401');
+
+      const accentDark = getColor('accent-dark', 'accent') || '#d84315';
+      const accentDarker = getColor('accent-darker') || '#bf360c';
+      const tertiaryLight = getColor('tertiary-light', 'tertiary') || '#fff9c4';
+      const tertiaryDark = getColor('tertiary-dark', 'tertiary-darker') || '#f57f17';
+
+
+      // Build preview HTML with CSS classes
+      previewContent.innerHTML = `
+        <div class=\"wpwm-preview-page\" style=\"--bg-color: ${bgColor}; --text-color: ${textColor}; --heading-color: ${headingColor}; --featured-bg: ${featuredBg}; --featured-text: ${featuredText}; --list-color-1: ${listColor1}; --list-color-2: ${listColor2}; --accent-dark: ${accentDark}; --accent-darker: ${accentDarker}; --tertiary-light: ${tertiaryLight}; --tertiary-dark: ${tertiaryDark};\">
+          <h1 class=\"preview-heading\">Welcome to Your Site</h1>
+
+          <section class=\"preview-featured\">
+            <h2>Featured Section</h2>
+            <p>This section uses the primary-lighter background to create visual hierarchy and draw attention to important content.</p>
+          </section>
+
+          <h3 class=\"preview-subheading\">Key Features</h3>
+          <ul class=\"preview-list\">
+            <li class=\"list-item-alt\">Beautiful color palettes for every mood</li>
+            <li>Carefully crafted design variations</li>
+            <li class=\"list-item-alt\">Instant preview and application</li>
+            <li>Light and dark mode support</li>
+          </ul>
+
+          <blockquote class=\"preview-quote\">
+            <p>"This theme variation system makes it incredibly easy to find the perfect color scheme for my website. The preview feature is a game-changer!"</p>
+          </blockquote>
+
+          <div class=\"preview-actions\">
+            <a href=\"#\" class=\"preview-btn-primary\">Get Started</a>
+            <a href=\"#\" class=\"preview-btn-secondary\">Learn More</a>
+          </div>
+        </div>
+      `;
+    }
+
+    // Initial render
+    updatePreview();
+
+    // Add to page
+    document.body.appendChild(overlay);
+
+    // Close on overlay click
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        document.body.removeChild(overlay);
+      }
+    });
+
+    // Close on Escape key
+    const escHandler = (e) => {
+      if (e.key === 'Escape') {
+        document.body.removeChild(overlay);
+        document.removeEventListener('keydown', escHandler);
+      }
+    };
+    document.addEventListener('keydown', escHandler);
   }
 
   function previewInEditor(variation) {
@@ -311,11 +583,29 @@
   }
 
   async function applyVariation(variation) {
-    console.log('WPWM-TVD: applyVariation called', {
-      title: variation.title,
-      slug: variation.slug,
-      hasConfig: !!variation.config
-    });
+    console.log('WPWM-TVD: ========================================');
+    console.log('WPWM-TVD: APPLYING VARIATION');
+    console.log('WPWM-TVD: Title:', variation.title);
+    console.log('WPWM-TVD: Slug:', variation.slug);
+    console.log('WPWM-TVD: Source file:', variation.source || 'unknown');
+    console.log('WPWM-TVD: Has config:', !!variation.config);
+
+    // Log palette colors if available
+    if (variation.config && variation.config.settings && variation.config.settings.color && variation.config.settings.color.palette) {
+      const palette = variation.config.settings.color.palette;
+      console.log('WPWM-TVD: Palette structure:', Array.isArray(palette) ? 'flat array' : 'origin-wrapped object');
+      console.log('WPWM-TVD: Palette colors:', palette);
+
+      // Log specific colors for debugging
+      if (Array.isArray(palette)) {
+        const primaryLight = palette.find(c => c.slug && c.slug.includes('primary-light'));
+        if (primaryLight) {
+          console.log('WPWM-TVD: primary-light color in variation:', primaryLight.color);
+        }
+      }
+    }
+    console.log('WPWM-TVD: Full config being applied:', variation.config);
+    console.log('WPWM-TVD: ========================================');
 
     // Try Site Editor API first (only available in Site Editor context)
     try {
@@ -523,6 +813,7 @@
 
     // Fallback: Use REST API (works in admin context)
     console.log('WPWM-TVD: Using REST API to apply variation...');
+    console.log('WPWM-TVD: Sending config to REST API:', variation.config);
     try {
       const response = await window.wp.apiFetch({
         path: 'wpwm-tvd/v1/apply',
@@ -530,10 +821,16 @@
         data: variation.config || {}
       });
 
-      console.log('WPWM-TVD: REST API response:', response);
+      console.log('WPWM-TVD: ========================================');
+      console.log('WPWM-TVD: REST API RESPONSE');
+      console.log('WPWM-TVD: Success:', response.success);
+      console.log('WPWM-TVD: Message:', response.message);
+      console.log('WPWM-TVD: Post ID:', response.post_id);
+      console.log('WPWM-TVD: Full response:', response);
+      console.log('WPWM-TVD: ========================================');
 
       if (response.success) {
-        alert('Variation "' + (variation.title || variation.slug) + '" applied successfully!\n\nRefresh the page to see changes.');
+        alert('Variation "' + (variation.title || variation.slug) + '" applied successfully!\n\nPost ID: ' + response.post_id + '\n\nRefresh the page to see changes.');
       } else {
         alert('Variation applied but response was unexpected: ' + JSON.stringify(response));
       }
@@ -547,8 +844,9 @@
   if (window.wp && window.wp.data) {
     whenStylesScreenReady(async (host) => {
       const grid = mountPanel(host);
-      const variations = await fetchVariations();
-      variations.forEach(v => renderCard(grid, v));
+      allVariations = await fetchVariations();
+      currentVariationSlug = await getCurrentVariation();
+      allVariations.forEach((v, index) => renderCard(grid, v, index));
     });
   }
 
@@ -571,9 +869,11 @@
     (async () => {
       console.log('WPWM-TVD: Fetching variations...');
       const grid = mountPanelInContainer(root);
-      const variations = await fetchVariations();
-      console.log('WPWM-TVD: Variations loaded:', variations.length);
-      variations.forEach(v => renderCard(grid, v));
+      allVariations = await fetchVariations();
+      currentVariationSlug = await getCurrentVariation();
+      console.log('WPWM-TVD: Variations loaded:', allVariations.length);
+      console.log('WPWM-TVD: Current variation:', currentVariationSlug);
+      allVariations.forEach((v, index) => renderCard(grid, v, index));
       console.log('WPWM-TVD: Cards rendered');
     })();
   }

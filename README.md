@@ -10,15 +10,20 @@
 **License URI:** https://www.gnu.org/licenses/gpl-3.0.html \
 **Donate link:** https://wp-website-mastery.com/donate
 
-A preview of WordPress Style Variations (colors & fonts) inside the Site Editor, with quick Select/Preview actions. Works even if the Theme Variation uses CSS variables.
+A preview of WordPress Style Variations (colors & fonts) installed on the theme. Use instead of the Site Editor's Browse Styles.
+
+Installs in Appearance → Theme Variation Display
 
 ## Description
 
 WPWM Theme Variation Display lists available Style Variations for the active theme and renders a compact, variable‑accurate preview for each card:
 
-- Stripe swatches for the variation’s palette colors with readable labels.
-- Font samples pulled from the variation’s settings when available.
-- Select or temporary Preview actions.
+- Will show every color in the Style Variation, and the color name (from the theme.json file).
+- Font samples pulled from the variation’s settings, when available.
+- Will show a "sample page" of the colors, if the colors follow recognized names.
+- Works even if the Theme Variation uses CSS variables.
+
+Click the "Select" button to apply the variation to the site.
 
 This helps theme authors and site builders evaluate multiple variations quickly without opening each one.
 
@@ -48,7 +53,7 @@ They are part of my upcoming course, "WordPress Websites: from Overwhelm to Mast
 
 ### Does this change my theme settings?
 
-No. It renders previews. “Select” applies the chosen variation via existing Site Editor APIs when available; “Preview (temporary)” does not save changes.
+No. It renders previews. “Select” applies the chosen variation via existing Site Editor APIs when available; “Preview” does not save changes.
 
 ### Why do some palettes show fewer labels?
 

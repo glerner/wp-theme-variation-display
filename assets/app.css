@@ -141,3 +141,269 @@
 	color: #646970;
 	margin-top: 4px
 }
+
+.wpwm-tvd-current-badge {
+	color: #2271b1;
+	font-weight: 500;
+	font-size: 14px;
+}
+
+/* Preview Modal */
+.wpwm-tvd-modal-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: rgba(0, 0, 0, 0.75);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 999999;
+	padding: 20px;
+}
+
+.wpwm-tvd-modal {
+	background: #fff;
+	border-radius: 12px;
+	max-width: 800px;
+	width: 100%;
+	max-height: 90vh;
+	display: flex;
+	flex-direction: column;
+	box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.wpwm-tvd-modal-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 20px 24px;
+	border-bottom: 1px solid #dcdcde;
+}
+
+.wpwm-tvd-modal-title {
+	margin: 0;
+	font-size: 20px;
+	font-weight: 600;
+	color: #1d2327;
+}
+
+.wpwm-tvd-modal-controls {
+	display: flex;
+	gap: 12px;
+	align-items: center;
+}
+
+.wpwm-tvd-theme-toggle {
+	padding: 8px 16px;
+	border: 1px solid #c3c4c7;
+	background: #fff;
+	border-radius: 6px;
+	cursor: pointer;
+	font-size: 14px;
+	transition: all 0.2s;
+}
+
+.wpwm-tvd-theme-toggle:hover {
+	background: #f6f7f7;
+	border-color: #8c8f94;
+}
+
+.wpwm-tvd-modal-close {
+	width: 36px;
+	height: 36px;
+	border: none;
+	background: #f6f7f7;
+	border-radius: 6px;
+	cursor: pointer;
+	font-size: 20px;
+	line-height: 1;
+	color: #50575e;
+	transition: all 0.2s;
+}
+
+.wpwm-tvd-modal-close:hover {
+	background: #dcdcde;
+	color: #1d2327;
+}
+
+.wpwm-tvd-preview-content {
+	flex: 1;
+	overflow-y: auto;
+	padding: 24px;
+}
+
+.wpwm-tvd-modal-nav {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 16px 24px;
+	border-top: 1px solid #dcdcde;
+	gap: 16px;
+}
+
+.wpwm-tvd-nav-btn {
+	padding: 10px 20px;
+	border: 1px solid #2271b1;
+	background: #2271b1;
+	color: #fff;
+	border-radius: 6px;
+	cursor: pointer;
+	font-size: 14px;
+	font-weight: 500;
+	transition: all 0.2s;
+}
+
+.wpwm-tvd-nav-btn:hover {
+	background: #135e96;
+	border-color: #135e96;
+}
+
+.wpwm-tvd-counter {
+	font-size: 14px;
+	color: #646970;
+	font-weight: 500;
+	white-space: nowrap;
+}
+
+/* Preview Page Styles */
+.wpwm-preview-page {
+	background: var(--bg-color);
+	color: var(--text-color);
+	padding: 2rem;
+	border-radius: 8px;
+	max-width: 600px;
+	margin: 0 auto;
+	line-height: 1.6;
+}
+
+.wpwm-preview-page h1,
+.wpwm-preview-page h2,
+.wpwm-preview-page h3 {
+	margin: 0 0 0.75rem 0;
+}
+
+.wpwm-preview-page p {
+	margin: 0;
+}
+
+.preview-heading {
+	color: var(--heading-color);
+	font-size: 2rem;
+	margin-bottom: 1rem;
+}
+
+.preview-featured {
+	background: var(--featured-bg);
+	color: var(--featured-text);
+	padding: 1.5rem;
+	border-radius: 6px;
+	margin-bottom: 1.5rem;
+}
+
+.preview-featured h2 {
+	font-size: 1.5rem;
+	color: var(--featured-text);
+}
+
+.preview-subheading {
+	color: var(--heading-color);
+	font-size: 1.25rem;
+}
+
+.preview-list {
+	margin: 0 0 1.5rem 0;
+	padding-left: 1.5rem;
+	line-height: 1.8;
+}
+
+.preview-list li {
+	color: var(--list-color-2);
+}
+
+.preview-list li.list-item-alt {
+	color: var(--list-color-1);
+}
+
+.preview-quote {
+	background: var(--tertiary-light);
+	border-left: 4px solid var(--tertiary-dark);
+	padding: 1rem 1.5rem;
+	margin: 0 0 1.5rem 0;
+	border-radius: 4px;
+}
+
+.preview-quote p {
+	font-style: italic;
+}
+
+.preview-actions {
+	display: flex;
+	gap: 1rem;
+	flex-wrap: wrap;
+}
+
+.preview-btn-primary,
+.preview-btn-secondary {
+	display: inline-block;
+	padding: 0.75rem 1.5rem;
+	border-radius: 4px;
+	text-decoration: none;
+	font-weight: 600;
+	transition: all 0.2s;
+}
+
+.preview-btn-primary {
+	background: var(--accent-darker);
+	color: white;
+	border: none;
+}
+
+.preview-btn-primary:hover {
+	background: var(--accent-dark);
+}
+
+.preview-btn-secondary {
+	background: transparent;
+	color: var(--accent-darker);
+	border: 2px solid var(--accent-darker);
+}
+
+.preview-btn-secondary:hover {
+	background: var(--accent-darker);
+	color: white;
+}
+
+/* Responsive adjustments */
+@media (max-width: 600px) {
+	.wpwm-tvd-modal {
+		max-width: 100%;
+		max-height: 100vh;
+		border-radius: 0;
+	}
+
+	.wpwm-tvd-modal-header,
+	.wpwm-tvd-preview-content,
+	.wpwm-tvd-modal-nav {
+		padding-left: 16px;
+		padding-right: 16px;
+	}
+
+	.wpwm-tvd-modal-title {
+		font-size: 18px;
+	}
+
+	.wpwm-tvd-nav-btn {
+		padding: 8px 12px;
+		font-size: 13px;
+	}
+
+	.wpwm-preview-page {
+		padding: 1.5rem;
+	}
+
+	.preview-heading {
+		font-size: 1.5rem;
+	}
+}
