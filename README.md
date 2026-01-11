@@ -73,6 +73,9 @@ Yes. RGBA backgrounds are composited against the card background before text con
 
 [missing image]
 
+### Demo of Light mode and Dark mode
+
+[missing image]
 
 ## Changelog
 

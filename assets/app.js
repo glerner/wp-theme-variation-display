@@ -14,6 +14,10 @@
   const DEFAULT_LIGHT_TEXT = '#000';
   const DEFAULT_DARK_TEXT = '#fff';
 
+  const FONT_STACK_SANS = ' , "Noto Sans", "Liberation Sans", Roboto, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, "Segoe UI", sans-serif';
+  const FONT_STACK_SERIF = 'ui-serif, Georgia, Cambria, "Times New Roman", Times, serif';
+  const FONT_STACK_MONO = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
+
   // Global state
   let allVariations = [];
   let currentVariationSlug = null;
@@ -166,9 +170,14 @@
     const panel = el('div', '', '');
     panel.id = 'wpwm-tvd-panel';
     const header = el('div', 'wpwm-tvd-header');
-    const note = el('div', 'wpwm-tvd-note', 'Variable-accurate preview (colors & fonts). Use Select to apply if available.');
-    header.appendChild(note);
-    panel.appendChild(header);
+    const noteText = 'Shows colors whether they are stored as color numbers or CSS variables. Shows fonts (if any) that are defined.';
+    if (noteText) {
+      const note = el('div', 'wpwm-tvd-note', noteText);
+      header.appendChild(note);
+    }
+    if (header.childNodes.length) {
+      panel.appendChild(header);
+    }
     const grid = el('div', 'wpwm-tvd-grid');
     panel.appendChild(grid);
     return panel;
@@ -194,6 +203,29 @@
 
   function normalizeSlug(slugString) {
     return (slugString || '').toString().toLowerCase().trim().replace(/[^a-z0-9-_]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+
+  function expandFontStack(fontFamily) {
+    const raw = (fontFamily || '').toString().trim();
+    if (!raw) return raw;
+    const parts = raw.split(',').map(p => p.trim()).filter(Boolean);
+    if (!parts.length) return raw;
+
+    const last = parts[parts.length - 1].replace(/^['"]|['"]$/g, '').toLowerCase();
+    if (last === 'sans-serif') {
+      parts.pop();
+      return (parts.length ? parts.join(', ') + ', ' : '') + FONT_STACK_SANS;
+    }
+    if (last === 'serif') {
+      parts.pop();
+      return (parts.length ? parts.join(', ') + ', ' : '') + FONT_STACK_SERIF;
+    }
+    if (last === 'monospace') {
+      parts.pop();
+      return (parts.length ? parts.join(', ') + ', ' : '') + FONT_STACK_MONO;
+    }
+
+    return raw;
   }
 
   function rewriteAndSanitizeCss(css, scopeClass) {
@@ -252,7 +284,7 @@
       ff.slice(0, MAX_FONT_SAMPLES).forEach(fontItem => {
         const fontSample = el('div', 'sample', fontItem.name || fontItem.slug || 'Font');
         const fontFamily = fontItem.fontFamily || (fontItem['font-family']);
-        if (fontFamily) fontSample.style.fontFamily = fontFamily;
+        if (fontFamily) fontSample.style.fontFamily = expandFontStack(fontFamily);
         row.appendChild(fontSample);
       });
       fontsBox.appendChild(row);
@@ -260,7 +292,7 @@
     if (stylesFF) {
       const row = el('div', 'font-row');
       const bodySample = el('div', 'sample', 'Body sample AaBbCc');
-      bodySample.style.fontFamily = stylesFF;
+      bodySample.style.fontFamily = expandFontStack(stylesFF);
       row.appendChild(bodySample);
       fontsBox.appendChild(row);
     }
